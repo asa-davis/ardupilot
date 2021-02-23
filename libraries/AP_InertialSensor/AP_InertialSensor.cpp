@@ -27,6 +27,7 @@
 #include "AP_InertialSensor_ADIS1647x.h"
 #include "AP_InertialSensor_ExternalAHRS.h"
 #include "AP_InertialSensor_Invensensev3.h"
+#include "AP_InertialSensor_LORD.h"
 
 /* Define INS_TIMING_DEBUG to track down scheduling issues with the main loop.
  * Output is on the debug console. */
@@ -754,6 +755,7 @@ void AP_InertialSensor::_start_backends()
 {
     detect_backends();
 
+    hal.console->printf("starting %d backends\n", _backend_count);
     for (uint8_t i = 0; i < _backend_count; i++) {
         _backends[i]->start();
     }
@@ -883,7 +885,6 @@ AP_InertialSensor::init(uint16_t loop_rate)
 
 bool AP_InertialSensor::_add_backend(AP_InertialSensor_Backend *backend)
 {
-
     if (!backend) {
         return false;
     }
@@ -900,6 +901,7 @@ bool AP_InertialSensor::_add_backend(AP_InertialSensor_Backend *backend)
 void
 AP_InertialSensor::detect_backends(void)
 {
+    hal.console->printf("Detecting backends...\n");
     if (_backends_detected) {
         return;
     }
@@ -998,14 +1000,16 @@ AP_InertialSensor::detect_backends(void)
     case AP_BoardConfig::PX4_BOARD_FMUV5:
     case AP_BoardConfig::PX4_BOARD_FMUV6:
         _fast_sampling_mask.set_default(1);
-        ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20689"), ROTATION_NONE));
-        ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20602"), ROTATION_NONE));
+        hal.console->printf("Adding backends for PX4 FMUV5/V6\n");
+        ADD_BACKEND(AP_InertialSensor_LORD::probe(*this));
+        //ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20689"), ROTATION_NONE));
+        //ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20602"), ROTATION_NONE));
         // allow for either BMI055 or BMI088
-        ADD_BACKEND(AP_InertialSensor_BMI055::probe(*this,
+        //ADD_BACKEND(AP_InertialSensor_BMI055::probe(*this,
                                                     hal.spi->get_device("bmi055_a"),
                                                     hal.spi->get_device("bmi055_g"),
                                                     ROTATION_ROLL_180_YAW_90));
-        ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,
+        //ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,
                                                     hal.spi->get_device("bmi055_a"),
                                                     hal.spi->get_device("bmi055_g"),
                                                     ROTATION_ROLL_180_YAW_90));
