@@ -11,13 +11,14 @@
 extern const AP_HAL::HAL& hal;
 
 //this will do stuff later
-AP_InertialSensor_LORD::AP_InertialSensor_LORD(AP_InertialSensor &imu) : AP_InertialSensor_Backend(imu) {}
+AP_InertialSensor_LORD::AP_InertialSensor_LORD(AP_InertialSensor &imu) : AP_InertialSensor_Backend(imu) {
+    hal.console->printf("**LORD** in constructor\n");
+}
 
 //this is what gets called from detect_backends in frontend
 AP_InertialSensor_Backend *
 AP_InertialSensor_LORD::probe(AP_InertialSensor &imu)
 {
-    hal.console->printf("**LORD** in constructor\n");
     auto sensor = new AP_InertialSensor_LORD(imu);
     return sensor;
 }
