@@ -19,10 +19,9 @@ const static int packetRateHz = 50;
 const static uint8_t syncByte1 = 0x75;
 const static uint8_t syncByte2 = 0x65;
 
-static size_t sync();
 static void setup_uart(AP_HAL::UARTDriver *uart, const char *name);
+static size_t sync();
 static LORD_Packet* readLORDPacket(bool skipSyncBytes);
-static uint16_t calcChecksum(uint8_t header[], uint8_t payload[]);
 
 //unused methods
 //static void readLORDtoConsole();
@@ -48,9 +47,7 @@ void loop() {
     pkt->print(console);
 
     //check if checksum is bad
-    if(!pkt->hasCorrectChecksum()) {
-        console->printf("BAD CHECKSUM: calculated 0x%x\n", pkt->correctChecksum);
-    }
+    console->printf("CHECKSUM: 0x%x\n", pkt->correctChecksum);
 
 }
 
@@ -124,10 +121,6 @@ static LORD_Packet* readLORDPacket(bool skipSyncBytes) {
     //read checksum
     uint8_t checksumBuff[2];
     imu -> read(checksumBuff, 2);
-
-    //verify checksum
-    uint16_t correctCheckSum = calcChecksum(headerBuff, payloadBuff);
-    console -> printf("CHECKSUM: 0x%x\n", correctCheckSum);
 
     //construct and return packet
     LORD_Packet* pkt = new LORD_Packet(headerBuff, payloadSize, payloadBuff, checksumBuff);

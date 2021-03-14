@@ -12,7 +12,7 @@ LORD_Packet::LORD_Packet(uint8_t* _header, size_t _payloadSize, uint8_t* _payloa
     ,payload(_payload)
     ,checksum(_checksum)
     {
-        calcChecksum()
+        calcChecksum();
     }
 
 void LORD_Packet::print(AP_HAL::UARTDriver *console) {
@@ -30,12 +30,8 @@ void LORD_Packet::print(AP_HAL::UARTDriver *console) {
     console -> printf("\n");
 }
 
-bool hasCorrectChecksum() {
-    return correctChecksum == checksum;
-}
-
 //Code adapted from MSCL ByteStream class
-static void calcChecksum() {
+void LORD_Packet::calcChecksum() {
     uint8_t checksumByte1 = 0;
     uint8_t checksumByte2 = 0;
     uint16_t finalChecksum;
