@@ -32,8 +32,6 @@ void setup() {
     hal.scheduler->delay(1000); //Ensure that the uart can be initialized
     setup_uart(imu, "LORD_IMU");
     setup_uart(console, "TERMINAL");
-
-    //sendLORDinitPackets(hal.serial(4), hal.serial(0));
 }
 
 void loop() {
@@ -49,6 +47,11 @@ void loop() {
     LORD_Packet* pkt = readLORDPacket(true);
     pkt->print(console);
 
+    //check if checksum is bad
+    if(!pkt->hasCorrectChecksum()) {
+        console->printf("BAD CHECKSUM: calculated 0x%x\n", pkt->correctChecksum);
+    }
+
 }
 
 //try to read bytes until we find the two sync bytes in a row (0x75 0x65)
@@ -61,8 +64,8 @@ static size_t sync() {
     uint8_t currByte[1];
 
     while(!synced) {
-
         size_t bytesRead = imu -> read(currByte, 1);
+        hal.scheduler->delay(1000/packetRateHz);
 
         //can't read from IMU
         if(bytesRead == 0) {
@@ -70,6 +73,8 @@ static size_t sync() {
         }
         //incorrect byte
         else if(currByte[0] != currSearchByte){
+            console->printf("Bad byte - 0x%x\n", currByte[0]);
+
             //reset search byte
             currSearchByte = syncByte1;
 
@@ -127,37 +132,6 @@ static LORD_Packet* readLORDPacket(bool skipSyncBytes) {
     //construct and return packet
     LORD_Packet* pkt = new LORD_Packet(headerBuff, payloadSize, payloadBuff, checksumBuff);
     return pkt;
-}
-
-//Code adapted from MSCL ByteStream class
-static uint16_t calcChecksum(uint8_t header[], uint8_t payload[]) {
-    uint8_t checksumByte1 = 0;
-    uint8_t checksumByte2 = 0;
-    uint16_t finalChecksum;
-    uint8_t payloadSize = header[3];
-
-    //loop through header
-    for (int i = 0; i < 4; i++) {
-        //add the current value to the first checksum byte
-        checksumByte1 += header[i];
-
-        //add the current sum of the bytes to checksumByte2
-        checksumByte2 += checksumByte1;
-    }
-
-    //loop through payload
-    for (int i = 0; i < payloadSize; i++) {
-        //add the current value to the first checksum byte
-        checksumByte1 += payload[i];
-
-        //add the current sum of the bytes to checksumByte2
-        checksumByte2 += checksumByte1;
-    }
-
-    //get the final checksum from the 2 bytes
-    finalChecksum = (static_cast<uint16_t>(checksumByte1) << 8) | static_cast<uint16_t>(checksumByte2);
-
-    return finalChecksum;
 }
 
 static void setup_uart(AP_HAL::UARTDriver *uart, const char *name) {
