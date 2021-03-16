@@ -48,7 +48,6 @@ void loop() {
 
     //check if checksum is bad
     console->printf("CHECKSUM: 0x%x\n", pkt->correctChecksum);
-
 }
 
 //try to read bytes until we find the two sync bytes in a row (0x75 0x65)
@@ -70,7 +69,7 @@ static size_t sync() {
         }
         //incorrect byte
         else if(currByte[0] != currSearchByte){
-            console->printf("Bad byte - 0x%x\n", currByte[0]);
+            console->printf("Bad byte - 0x%02x != 0x%02x\n", currByte[0], currSearchByte);
 
             //reset search byte
             currSearchByte = syncByte1;
