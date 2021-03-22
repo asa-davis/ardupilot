@@ -16,4 +16,4 @@ On each loop:
 
 NOTE: if we run out of bytes during a, b, or c we must save this step and return. on next loop cycle, we must resume here.
 
-NOTE: in the future, we can make a consumer and producer thread and use a shared ring buffer with mutex/semaphore
+NOTE: in the future, we can make a consumer and producer thread and use a shared ring buffer with mutex/semaphore. See the RingBuffer example sketch.
