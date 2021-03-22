@@ -1,132 +1,184 @@
-/*
-  simple test of UART interfaces
- */
 #include <AP_HAL/AP_HAL.h>
+#include <AP_HAL/utility/RingBuffer.h>
+
 #if HAL_OS_POSIX_IO
 #include <stdio.h>
 #endif
 
-#include "LORD_Packet.h"
+struct LORD_Packet {
+    uint8_t header[4];
+    uint8_t* payload;
+    uint8_t checksum[2];
+};
 
 void setup();
 void loop();
+static void setup_uart(AP_HAL::UARTDriver *uart);
+static void readIMU();
+static void buildPacket();
+static bool validPacket();
+static void printCurrPacket();
+//static void printAllAvailableBytes();
 
+//HAL variables
 const AP_HAL::HAL& hal = AP_HAL::get_HAL();
 static AP_HAL::UARTDriver *imu = hal.serial(4);
 static AP_HAL::UARTDriver *console = hal.serial(0);
 
-const static int packetRateHz = 50;
-const static uint8_t syncByte1 = 0x75;
-const static uint8_t syncByte2 = 0x65;
+//shared ring buffer
+static const uint32_t bufferSize = 1024;
+static ByteBuffer buffer{bufferSize};
+static uint8_t tempData[bufferSize];    //later, the producer and consumer should each have their own temp buffers
 
-static void setup_uart(AP_HAL::UARTDriver *uart, const char *name);
-static size_t sync();
-static LORD_Packet* readLORDPacket(bool skipSyncBytes);
+//packet parsing state variables
+static struct LORD_Packet currPacket;
+enum SearchPhase { sync, payloadSize, payloadAndChecksum };
+static SearchPhase currPhase = sync;
+static int searchBytes = 1;
+//sync bytes phase
+static const uint8_t syncByte1 = 0x75;
+static const uint8_t syncByte2 = 0x65;
+static uint8_t nextSyncByte = syncByte1;
 
-//unused methods
-//static void readLORDtoConsole();
-//static void sendLORDPingPacket(AP_HAL::UARTDriver *uart, AP_HAL::UARTDriver *console);
+//stats
+static uint32_t firstReadTime;
+static int numGoodPackets = 0;
+static int numBytesSkipped = 0;
+static int numBadPackets = 0;
+static bool debugged = false;
 
 void setup() {
+    setup_uart(imu);
+    setup_uart(console);
     hal.scheduler->delay(1000); //Ensure that the uart can be initialized
-    setup_uart(imu, "LORD_IMU");
-    setup_uart(console, "TERMINAL");
 }
 
 void loop() {
-    hal.scheduler->delay(1000/packetRateHz);
+    //read 1000 packets, then debug the stats
+    if(numGoodPackets < 1000) {
+        //collect all available bytes
+        readIMU();
 
-    //make sure we are synced
-    size_t numBytesSkipped = sync();
-    if(numBytesSkipped > 0) {
-        console->printf("Synced after skipping %u bytes.\n", numBytesSkipped);
+        //parse any available bytes
+        buildPacket();
     }
-
-    //read and print the packet
-    LORD_Packet* pkt = readLORDPacket(true);
-    pkt->print(console);
-
-    //check if checksum is bad
-    console->printf("CHECKSUM: 0x%x\n", pkt->correctChecksum);
+    else if(!debugged) {
+        console->printf("\nread 1000 packets in %lu milliseconds\n", AP_HAL::millis() - firstReadTime);
+        console->printf("first read time: %lu\n", firstReadTime);
+        console->printf("finish time: %lu\n", AP_HAL::millis());
+        console->printf("skipped %i bytes\n", numBytesSkipped);
+        console->printf("handled %i bad checksums\n", numBadPackets);
+        debugged = true;
+    }
 }
 
-//try to read bytes until we find the two sync bytes in a row (0x75 0x65)
-//return the number of bytes skipped
-static size_t sync() {
-    size_t numBytesSkipped = 0;
-    bool synced = false;
-
-    uint8_t currSearchByte = syncByte1;
-    uint8_t currByte[1];
-
-    while(!synced) {
-        size_t bytesRead = imu -> read(currByte, 1);
-        hal.scheduler->delay(1000/packetRateHz);
-
-        //can't read from IMU
-        if(bytesRead == 0) {
-            console->printf("Can't read from imu!\n");
-        }
-        //incorrect byte
-        else if(currByte[0] != currSearchByte){
-            console->printf("Bad byte - 0x%02x != 0x%02x\n", currByte[0], currSearchByte);
-
-            //reset search byte
-            currSearchByte = syncByte1;
-
-            numBytesSkipped++;
-        }
-        //correct byte
-        else {
-            if(currSearchByte == syncByte1) {
-                currSearchByte = syncByte2;
-            }
-            else {
-                synced = true;
-            }
-        }
-    }
-    return numBytesSkipped;
+//read all available bytes into ring buffer.
+static void readIMU() {
+    uint32_t amountRead = imu -> read(tempData, bufferSize);
+    buffer.write(tempData, amountRead);
 }
 
-//reads exactly one packet
-static LORD_Packet* readLORDPacket(bool skipSyncBytes) {
-    //read header into buffer
-    uint8_t headerBuff[4];
-
-    //if we already read sync bytes, we can just read the next two into the header
-    if(skipSyncBytes) {
-        headerBuff[0] = syncByte1;
-        headerBuff[1] = syncByte2;
-
-        uint8_t headerBuff2[2];
-        imu -> read(headerBuff2, 2);
-
-        headerBuff[2] = headerBuff2[0];
-        headerBuff[3] = headerBuff2[1];
+//use all available bytes to continue building packets where we left off last loop
+static void buildPacket() {
+    while(buffer.available() >= searchBytes) {
+        switch (currPhase) {
+            case sync: {
+                bool good = buffer.read_byte(tempData);
+                if(!good) break;
+                if (tempData[0] == nextSyncByte) {
+                    if (nextSyncByte == syncByte2) {
+                        nextSyncByte = syncByte1;
+                        currPacket.header[0] = 0x75;
+                        currPacket.header[1] = 0x65;
+                        currPhase = payloadSize;
+                        searchBytes = 2;
+                    } else {
+                        nextSyncByte = syncByte2;
+                    }
+                } else {
+                    numBytesSkipped++;
+                    nextSyncByte = syncByte1;
+                }
+                }
+                break;
+            case payloadSize: {
+                buffer.peekbytes(tempData, searchBytes);
+                currPacket.header[2] = tempData[0];
+                currPacket.header[3] = tempData[1];
+                searchBytes = tempData[1] + 4; //next time we need to peek the second half of the header (which we already peeked) + payload + checksum
+                currPhase = payloadAndChecksum;
+                }
+                break;
+            case payloadAndChecksum: {
+                buffer.peekbytes(tempData, searchBytes);
+                //copy in the payload and checksum, skip second half of header
+                for (int i = 2; i < searchBytes - 2; i++) {
+                    currPacket.payload[i - 2] = tempData[i];
+                }
+                currPacket.checksum[0] = tempData[searchBytes - 2];
+                currPacket.checksum[1] = tempData[searchBytes - 1];
+                //if checksum is good we can move read pointer, otherwise we leave all those bytes and start after the last sync bytes
+                if (validPacket()) {
+                    printCurrPacket();
+                    buffer.read(tempData, searchBytes);
+                    numGoodPackets++;
+                    if(numGoodPackets == 0)
+                        firstReadTime = AP_HAL::millis();
+                }
+                else {
+                    numBadPackets++;
+                }
+                currPhase = sync;
+                searchBytes = 1;
+                }
+                break;
+        }
     }
-    //otherwise read 4 bytes to header
-    else {
-        imu -> read(headerBuff, 4);
-    }
-
-    //determine payload size
-    size_t payloadSize = headerBuff[3];
-
-    //read payload
-    uint8_t payloadBuff[payloadSize];
-    imu -> read(payloadBuff, payloadSize);
-
-    //read checksum
-    uint8_t checksumBuff[2];
-    imu -> read(checksumBuff, 2);
-
-    //construct and return packet
-    LORD_Packet* pkt = new LORD_Packet(headerBuff, payloadSize, payloadBuff, checksumBuff);
-    return pkt;
 }
 
-static void setup_uart(AP_HAL::UARTDriver *uart, const char *name) {
+//gets checksum and compares it to curr packet
+static bool validPacket() {
+    uint8_t checksumByte1 = 0;
+    uint8_t checksumByte2 = 0;
+
+    for (int i = 0; i < 4; i++) {
+        checksumByte1 += currPacket.header[i];
+        checksumByte2 += checksumByte1;
+    }
+
+    for (int i = 0; i < currPacket.header[3]; i++) {
+        checksumByte1 += currPacket.payload[i];
+        checksumByte2 += checksumByte1;
+    }
+
+    return (currPacket.checksum[0] == checksumByte1 && currPacket.checksum[1] == checksumByte2);
+}
+
+static void printCurrPacket() {
+    for(int i = 0; i < 4; i++) {
+        console->printf("0x%x ", currPacket.header[i]);
+    }
+    for(int i = 0; i < currPacket.header[3]; i++) {
+        console->printf("0x%x ", currPacket.payload[i]);
+    }
+    for(int i = 0; i < 2; i++) {
+        console->printf("0x%x ", currPacket.checksum[i]);
+    }
+    console -> printf("\n");
+}
+
+//just prints whatever is in the ring buffer
+/*static void printAllAvailableBytes() {
+    uint32_t available = buffer.available();
+    buffer.read(tempData, available);
+
+    for(int i = 0; i < available; i++) {
+        console -> printf("0x%x ", tempData[i]);
+    }
+    console -> printf("\n");
+}*/
+
+static void setup_uart(AP_HAL::UARTDriver *uart) {
     if (uart == nullptr) {
         // that UART doesn't exist on this platform
         return;
