@@ -64,8 +64,6 @@ void loop() {
     }
     else if(!debugged) {
         console->printf("\nread 1000 packets in %lu milliseconds\n", AP_HAL::millis() - firstReadTime);
-        console->printf("first read time: %lu\n", firstReadTime);
-        console->printf("finish time: %lu\n", AP_HAL::millis());
         console->printf("skipped %i bytes\n", numBytesSkipped);
         console->printf("handled %i bad checksums\n", numBadPackets);
         debugged = true;
