@@ -122,7 +122,7 @@ static void buildPacket() {
                     printCurrPacket();
                     buffer.read(tempData, searchBytes);
                     numGoodPackets++;
-                    if(numGoodPackets == 0)
+                    if(numGoodPackets == 1)
                         firstReadTime = AP_HAL::millis();
                 }
                 else {
