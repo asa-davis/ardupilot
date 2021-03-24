@@ -125,11 +125,11 @@ void AP_ExternalAHRS::init(void)
         return;
     }
     auto &sm = AP::serialmanager();
-    uart = sm.find_serial(AP_SerialManager::SerialProtocol_AHRS, 0);
-    if (!uart) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "ExternalAHRS no UART");
-        return;
-    }
+    //uart = sm.find_serial(AP_SerialManager::SerialProtocol_AHRS, 0);
+    //if (!uart) {
+        //GCS_SEND_TEXT(MAV_SEVERITY_INFO, "ExternalAHRS no UART");
+        //return;
+    //}
     baudrate = sm.find_baudrate(AP_SerialManager::SerialProtocol_AHRS, 0);
     port_num = sm.find_portnum(AP_SerialManager::SerialProtocol_AHRS, 0);
 
@@ -154,83 +154,21 @@ void AP_ExternalAHRS::init(void)
  */
 bool AP_ExternalAHRS::check_uart()
 {
-    if (!port_opened) {
-        return false;
-    }
-    WITH_SEMAPHORE(sem);
 
-    uint32_t n = uart->available();
-    if (n == 0) {
-        return false;
-    }
-    if (pktoffset < bufsize) {
-        ssize_t nread = uart->read(&pktbuf[pktoffset], MIN(n, unsigned(bufsize-pktoffset)));
-        if (nread <= 0) {
-            return false;
-        }
-        pktoffset += nread;
-    }
-
-    bool match_header1, match_header2;
-
-    if (pktbuf[0] != 0xFA) {
-        goto reset;
-    }
-
-    match_header1 = (0 == memcmp(&pktbuf[1], vn_pkt1_header, MIN(sizeof(vn_pkt1_header), unsigned(pktoffset-1))));
-    match_header2 = (0 == memcmp(&pktbuf[1], vn_pkt2_header, MIN(sizeof(vn_pkt2_header), unsigned(pktoffset-1))));
-    if (!match_header1 && !match_header2) {
-        goto reset;
-    }
-
-    if (match_header1 && pktoffset >= VN_PKT1_LENGTH) {
-        uint16_t crc = crc16_ccitt(&pktbuf[1], VN_PKT1_LENGTH-1, 0);
-        if (crc == 0) {
-            // got pkt1
-            process_packet1(&pktbuf[sizeof(vn_pkt1_header)+1]);
-            memmove(&pktbuf[0], &pktbuf[VN_PKT1_LENGTH], pktoffset-VN_PKT1_LENGTH);
-            pktoffset -= VN_PKT1_LENGTH;
-        } else {
-            goto reset;
-        }
-    } else if (match_header2 && pktoffset >= VN_PKT2_LENGTH) {
-        uint16_t crc = crc16_ccitt(&pktbuf[1], VN_PKT2_LENGTH-1, 0);
-        if (crc == 0) {
-            // got pkt2
-            process_packet2(&pktbuf[sizeof(vn_pkt2_header)+1]);
-            memmove(&pktbuf[0], &pktbuf[VN_PKT2_LENGTH], pktoffset-VN_PKT2_LENGTH);
-            pktoffset -= VN_PKT2_LENGTH;
-        } else {
-            goto reset;
-        }
-    }
-    return true;
-
-reset:
-    uint8_t *p = (uint8_t *)memchr(&pktbuf[1], (char)0xFA, pktoffset-1);
-    if (p) {
-        uint8_t newlen = pktoffset - (p - pktbuf);
-        memmove(&pktbuf[0], p, newlen);
-        pktoffset = newlen;
-    } else {
-        pktoffset = 0;
-    }
-    return true;
 }
 
 void AP_ExternalAHRS::update_thread()
 {
-    if (!port_opened) {
-        // open port in the thread
-        port_opened = true;
-        uart->begin(baudrate, 1024, 512);
-    }
+    hal.console -> printf("in external_ahrs update_thread()\n");
 
-    while (true) {
-        if (!check_uart()) {
-            hal.scheduler->delay(1);
-        }
-    }
+    //dummy data
+    ins_data_message_t ins;
+
+    ins.accel = Vector3f{42.0f, 42.0f, 42.0f};
+    ins.gyro = Vector3f{42.0f, 42.0f, 42.0f};
+    ins.temperature = 42.0f;
+
+    AP::ins().handle_external(ins);
 }
 
 /*
@@ -238,67 +176,7 @@ void AP_ExternalAHRS::update_thread()
  */
 void AP_ExternalAHRS::process_packet1(const uint8_t *b)
 {
-    const struct VN_packet1 &pkt1 = *(struct VN_packet1 *)b;
-    const struct VN_packet2 &pkt2 = *last_pkt2;
 
-    last_pkt1_ms = AP_HAL::millis();
-    *last_pkt1 = pkt1;
-
-    {
-        baro_data_message_t baro;
-        baro.instance = 0;
-        baro.pressure_pa = pkt1.pressure*1e3;
-        baro.temperature = pkt2.temp;
-
-        AP::baro().handle_external(baro);
-    }
-
-    {
-        mag_data_message_t mag;
-        mag.field = Vector3f{pkt1.mag[0], pkt1.mag[1], pkt1.mag[2]};
-        mag.field *= 1000; // to mGauss
-
-        AP::compass().handle_external(mag);
-    }
-
-    {
-        ins_data_message_t ins;
-
-        ins.accel = Vector3f{pkt1.accel[0], pkt1.accel[1], pkt1.accel[2]};
-        ins.gyro = Vector3f{pkt1.gyro[0], pkt1.gyro[1], pkt1.gyro[2]};
-        ins.temperature = pkt2.temp;
-
-        AP::ins().handle_external(ins);
-    }
-
-    // @LoggerMessage: EAH1
-    // @Description: External AHRS data
-    // @Field: TimeUS: Time since system startup
-    // @Field: Roll: euler roll
-    // @Field: Pitch: euler pitch
-    // @Field: Yaw: euler yaw
-    // @Field: VN: velocity north
-    // @Field: VE: velocity east
-    // @Field: VD: velocity down
-    // @Field: Lat: latitude
-    // @Field: Lon: longitude
-    // @Field: Alt: altitude AMSL
-    // @Field: UXY: uncertainty in XY position
-    // @Field: UV: uncertainty in velocity
-    // @Field: UR: uncertainty in roll
-    // @Field: UP: uncertainty in pitch
-    // @Field: UY: uncertainty in yaw
-
-    AP::logger().Write("EAH1", "TimeUS,Roll,Pitch,Yaw,VN,VE,VD,Lat,Lon,Alt,UXY,UV,UR,UP,UY",
-                       "sdddnnnDUmmnddd", "F000000GG000000",
-                       "QffffffLLffffff",
-                       AP_HAL::micros64(),
-                       pkt1.ypr[2], pkt1.ypr[1], pkt1.ypr[0],
-                       pkt1.velNED[0], pkt1.velNED[1], pkt1.velNED[2],
-                       int32_t(pkt1.positionLLA[0]*1.0e7), int32_t(pkt1.positionLLA[1]*1.0e7),
-                       float(pkt1.positionLLA[2]),
-                       pkt1.posU, pkt1.velU,
-                       pkt1.yprU[2], pkt1.yprU[1], pkt1.yprU[0]);
 }
 
 /*
@@ -306,52 +184,18 @@ void AP_ExternalAHRS::process_packet1(const uint8_t *b)
  */
 void AP_ExternalAHRS::process_packet2(const uint8_t *b)
 {
-    const struct VN_packet2 &pkt2 = *(struct VN_packet2 *)b;
-    const struct VN_packet1 &pkt1 = *last_pkt1;
 
-    last_pkt2_ms = AP_HAL::millis();
-    *last_pkt2 = pkt2;
-
-    gps_data_message_t gps;
-
-    // get ToW in milliseconds
-    gps.gps_week = pkt2.timeGPS / (AP_MSEC_PER_WEEK * 1000000ULL);
-    gps.ms_tow = (pkt2.timeGPS / 1000000ULL) % (60*60*24*7*1000ULL);
-    gps.fix_type = pkt2.GPS1Fix;
-    gps.satellites_in_view = pkt2.numGPS1Sats;
-
-    gps.horizontal_pos_accuracy = pkt1.posU;
-    gps.vertical_pos_accuracy = pkt1.posU;
-    gps.horizontal_vel_accuracy = pkt1.velU;
-
-    gps.hdop = pkt2.GPS1DOP[4];
-    gps.vdop = pkt2.GPS1DOP[3];
-
-    gps.latitude = pkt2.GPS1posLLA[0] * 1.0e7;
-    gps.longitude = pkt2.GPS1posLLA[1] * 1.0e7;
-    gps.msl_altitude = pkt2.GPS1posLLA[2] * 1.0e2;
-
-    gps.ned_vel_north = pkt2.GPS1velNED[0];
-    gps.ned_vel_east = pkt2.GPS1velNED[1];
-    gps.ned_vel_down = pkt2.GPS1velNED[2];
-
-    if (gps.fix_type >= 3 && !origin_set) {
-        origin.lat = gps.latitude;
-        origin.lng = gps.longitude;
-        origin.alt = gps.msl_altitude;
-        origin_set = true;
-    }
-
-    AP::gps().handle_external(gps);
 }
 
 // get serial port number for the uart
 int8_t AP_ExternalAHRS::get_port(void) const
 {
-    if (!uart) {
-        return -1;
-    }
-    return port_num;
+    //what is this for? ins checks if it returns > 0...
+    //if (!uart) {
+        //return -1;
+    //}
+    //return port_num;
+    return 4;
 };
 
 // accessors for AP_AHRS
