@@ -27,7 +27,6 @@
 #include "AP_InertialSensor_ADIS1647x.h"
 #include "AP_InertialSensor_ExternalAHRS.h"
 #include "AP_InertialSensor_Invensensev3.h"
-#include "AP_InertialSensor_LORD.h"
 
 /* Define INS_TIMING_DEBUG to track down scheduling issues with the main loop.
  * Output is on the debug console. */
@@ -742,7 +741,6 @@ uint8_t AP_InertialSensor::register_accel(uint16_t raw_sample_rate_hz,
         _accel_id_ok[_accel_count] = true;
         _accel_id[_accel_count].save();
 #endif
-
     return _accel_count++;
 }
 
@@ -946,6 +944,7 @@ AP_InertialSensor::detect_backends(void)
 
 
 #if HAL_EXTERNAL_AHRS_ENABLED
+    hal.console->printf("External AHRS enabled\n");
     // if enabled, make the first IMU the external AHRS
     if (int8_t serial_port = AP::externalAHRS().get_port() >= 0) {
         ADD_BACKEND(new AP_InertialSensor_ExternalAHRS(*this, serial_port));
@@ -1000,19 +999,17 @@ AP_InertialSensor::detect_backends(void)
     case AP_BoardConfig::PX4_BOARD_FMUV5:
     case AP_BoardConfig::PX4_BOARD_FMUV6:
         _fast_sampling_mask.set_default(1);
-        hal.console->printf("Adding backends for PX4 FMUV5/V6\n");
-        ADD_BACKEND(AP_InertialSensor_LORD::probe(*this));
-        //ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20689"), ROTATION_NONE));
-        //ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20602"), ROTATION_NONE));
+        ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20689"), ROTATION_NONE));
+        ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20602"), ROTATION_NONE));
         // allow for either BMI055 or BMI088
-        //ADD_BACKEND(AP_InertialSensor_BMI055::probe(*this,
-                                                    //hal.spi->get_device("bmi055_a"),
-                                                    //hal.spi->get_device("bmi055_g"),
-                                                    //ROTATION_ROLL_180_YAW_90));
-        //ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,
-                                                    //hal.spi->get_device("bmi055_a"),
-                                                    //hal.spi->get_device("bmi055_g"),
-                                                    //ROTATION_ROLL_180_YAW_90));
+        ADD_BACKEND(AP_InertialSensor_BMI055::probe(*this,
+                                                    hal.spi->get_device("bmi055_a"),
+                                                    hal.spi->get_device("bmi055_g"),
+                                                    ROTATION_ROLL_180_YAW_90));
+        ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,
+                                                    hal.spi->get_device("bmi055_a"),
+                                                    hal.spi->get_device("bmi055_g"),
+                                                    ROTATION_ROLL_180_YAW_90));
         break;
         
     case AP_BoardConfig::PX4_BOARD_SP01:

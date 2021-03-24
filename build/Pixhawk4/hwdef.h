@@ -289,8 +289,7 @@
 #define HAL_INS_PROBE3  ADD_BACKEND(AP_InertialSensor_BMI055::probe(*this,hal.spi->get_device("bmi055_a"),hal.spi->get_device("bmi055_g"),ROTATION_ROLL_180_YAW_90))
 #define HAL_INS_PROBE4  ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,hal.spi->get_device("bmi055_a"),hal.spi->get_device("bmi055_g"),ROTATION_ROLL_180_YAW_90))
 //#define HAL_INS_PROBE_LIST HAL_INS_PROBE1;HAL_INS_PROBE2;HAL_INS_PROBE3;HAL_INS_PROBE4
-#define HAL_INS_PROBE_LORD ADD_BACKEND(AP_InertialSensor_LORD::probe(*this));
-#define HAL_INS_PROBE_LIST HAL_INS_PROBE_LORD;
+// ^^ disable built in imu on pixhawk 4 ^^
 
 #define HAL_MAG_PROBE1 FOREACH_I2C_EXTERNAL(b) ADD_BACKEND(DRIVER_IST8310, AP_Compass_IST8310::probe(GET_I2C_DEVICE(b,0x0e),true,ROTATION_ROLL_180_YAW_90))
 #define HAL_MAG_PROBE2 FOREACH_I2C_INTERNAL(b) ADD_BACKEND(DRIVER_IST8310, AP_Compass_IST8310::probe(GET_I2C_DEVICE(b,0x0e),false,ROTATION_ROLL_180_YAW_90))
