@@ -2,17 +2,17 @@ LORD packet reader v2
 =====================
 
 On each loop:
-    - read all available bytes from uart into a buffer
+    - read all available bytes from uart into ring buffer
     - while buffer is not empty:
         a. search for header bytes 0x75 0x65
-        b. peak header and parse payload size
+        b. peak header and get payload size
         c. peak payload and checksum
         d. calculate checksum
         e1. if checksum incorrect:
-            - go back to searching for header starting after last 0x65
+            - go back to searching for header starting after sync bytes
         e2. if checksum correct:
-            - read 2 + payload size + 2 into packet struct
-            - print packet
+            - read 2 + payload size + 2 into packet struct, advancing read pointer
+            - parse accel/gyro data from packet using Zach's code
 
 NOTE: if we run out of bytes during a, b, or c we must save this step and return. on next loop cycle, we must resume here.
 
