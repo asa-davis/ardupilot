@@ -154,7 +154,7 @@ void AP_ExternalAHRS::init(void)
  */
 bool AP_ExternalAHRS::check_uart()
 {
-
+    return true;
 }
 
 void AP_ExternalAHRS::update_thread()
@@ -164,8 +164,8 @@ void AP_ExternalAHRS::update_thread()
     //dummy data
     ins_data_message_t ins;
 
-    ins.accel = Vector3f{42.0f, 42.0f, 42.0f};
-    ins.gyro = Vector3f{42.0f, 42.0f, 42.0f};
+    ins.accel = Vector3f{0, 0, 0};
+    ins.gyro = Vector3f{0, 0, 0};
     ins.temperature = 42.0f;
 
     AP::ins().handle_external(ins);

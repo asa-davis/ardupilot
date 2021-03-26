@@ -953,7 +953,7 @@ AP_InertialSensor::detect_backends(void)
 
 #if defined(HAL_INS_PROBE_LIST)
     // IMUs defined by IMU lines in hwdef.dat
-    HAL_INS_PROBE_LIST;
+    //HAL_INS_PROBE_LIST;
 #elif CONFIG_HAL_BOARD == HAL_BOARD_SITL
     for (uint8_t i=0; i<AP::sitl()->imu_count; i++) {
         ADD_BACKEND(AP_InertialSensor_SITL::detect(*this, i==1?INS_SITL_SENSOR_B:INS_SITL_SENSOR_A));
@@ -999,17 +999,17 @@ AP_InertialSensor::detect_backends(void)
     case AP_BoardConfig::PX4_BOARD_FMUV5:
     case AP_BoardConfig::PX4_BOARD_FMUV6:
         _fast_sampling_mask.set_default(1);
-        ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20689"), ROTATION_NONE));
-        ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20602"), ROTATION_NONE));
+        //ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20689"), ROTATION_NONE));
+        //ADD_BACKEND(AP_InertialSensor_Invensense::probe(*this, hal.spi->get_device("icm20602"), ROTATION_NONE));
         // allow for either BMI055 or BMI088
-        ADD_BACKEND(AP_InertialSensor_BMI055::probe(*this,
-                                                    hal.spi->get_device("bmi055_a"),
-                                                    hal.spi->get_device("bmi055_g"),
-                                                    ROTATION_ROLL_180_YAW_90));
-        ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,
-                                                    hal.spi->get_device("bmi055_a"),
-                                                    hal.spi->get_device("bmi055_g"),
-                                                    ROTATION_ROLL_180_YAW_90));
+        //ADD_BACKEND(AP_InertialSensor_BMI055::probe(*this,
+                                                    //hal.spi->get_device("bmi055_a"),
+                                                    //hal.spi->get_device("bmi055_g"),
+                                                    //ROTATION_ROLL_180_YAW_90));
+        //ADD_BACKEND(AP_InertialSensor_BMI088::probe(*this,
+                                                    //hal.spi->get_device("bmi055_a"),
+                                                    //hal.spi->get_device("bmi055_g"),
+                                                    //ROTATION_ROLL_180_YAW_90));
         break;
         
     case AP_BoardConfig::PX4_BOARD_SP01:
@@ -1316,6 +1316,7 @@ void
 AP_InertialSensor::_init_gyro()
 {
     uint8_t num_gyros = MIN(get_gyro_count(), INS_MAX_INSTANCES);
+    //gets stuk
     Vector3f last_average[INS_MAX_INSTANCES], best_avg[INS_MAX_INSTANCES];
     Vector3f new_gyro_offset[INS_MAX_INSTANCES];
     float best_diff[INS_MAX_INSTANCES];
