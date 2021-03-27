@@ -1316,7 +1316,6 @@ void
 AP_InertialSensor::_init_gyro()
 {
     uint8_t num_gyros = MIN(get_gyro_count(), INS_MAX_INSTANCES);
-    //gets stuk
     Vector3f last_average[INS_MAX_INSTANCES], best_avg[INS_MAX_INSTANCES];
     Vector3f new_gyro_offset[INS_MAX_INSTANCES];
     float best_diff[INS_MAX_INSTANCES];
@@ -1337,7 +1336,7 @@ AP_InertialSensor::_init_gyro()
     AP_Notify::flags.initialising = true;
 
     // cold start
-    hal.console->printf("Init Gyro");
+    hal.console->printf("Init Gyro\n");
 
     /*
       we do the gyro calibration with no board rotation. This avoids
@@ -1346,6 +1345,7 @@ AP_InertialSensor::_init_gyro()
     enum Rotation saved_orientation = _board_orientation;
     _board_orientation = ROTATION_NONE;
 
+    hal.console->printf("1\n");
     // remove existing gyro offsets
     for (uint8_t k=0; k<num_gyros; k++) {
         _gyro_offset[k].set(Vector3f());
@@ -1355,10 +1355,12 @@ AP_InertialSensor::_init_gyro()
         converged[k] = false;
     }
 
+    hal.console->printf("2\n");
     for(int8_t c = 0; c < 5; c++) {
         hal.scheduler->delay(5);
         update();
     }
+    hal.console->printf("3\n");
 
 #if HAL_INS_TEMPERATURE_CAL_ENABLE
     // get start temperature. gyro cal usually happens when the board
@@ -1441,7 +1443,7 @@ AP_InertialSensor::_init_gyro()
 
     // we've kept the user waiting long enough - use the best pair we
     // found so far
-    hal.console->printf("\n");
+    hal.console->printf("4\n");
     for (uint8_t k=0; k<num_gyros; k++) {
         if (!converged[k]) {
             hal.console->printf("gyro[%u] did not converge: diff=%f dps (expected < %f)\n",
@@ -1459,6 +1461,7 @@ AP_InertialSensor::_init_gyro()
 #endif
         }
     }
+    hal.console->printf("5\n");
 
     // restore orientation
     _board_orientation = saved_orientation;
@@ -1468,6 +1471,7 @@ AP_InertialSensor::_init_gyro()
 
     // stop flashing leds
     AP_Notify::flags.initialising = false;
+    hal.console->printf("6\n");
 }
 
 // save parameters to eeprom
@@ -1497,8 +1501,9 @@ void AP_InertialSensor::update(void)
 {
     // during initialisation update() may be called without
     // wait_for_sample(), and a wait is implied
+    hal.console->printf("update 1\n");
     wait_for_sample();
-
+    hal.console->printf("update 2\n");
     if (!_hil_mode) {
         for (uint8_t i=0; i<INS_MAX_INSTANCES; i++) {
             // mark sensors unhealthy and let update() in each backend
@@ -1509,10 +1514,11 @@ void AP_InertialSensor::update(void)
             _delta_velocity_valid[i] = false;
             _delta_angle_valid[i] = false;
         }
+        hal.console->printf("update 3\n");
         for (uint8_t i=0; i<_backend_count; i++) {
             _backends[i]->update();
         }
-
+        hal.console->printf("update 4\n");
         // clear accumulators
         for (uint8_t i = 0; i < INS_MAX_INSTANCES; i++) {
             _delta_velocity_acc[i].zero();
@@ -1520,7 +1526,7 @@ void AP_InertialSensor::update(void)
             _delta_angle_acc[i].zero();
             _delta_angle_acc_dt[i] = 0;
         }
-
+        hal.console->printf("update 5\n");
         if (!_startup_error_counts_set) {
             for (uint8_t i=0; i<INS_MAX_INSTANCES; i++) {
                 _accel_startup_error_count[i] = _accel_error_count[i];
@@ -1533,7 +1539,7 @@ void AP_InertialSensor::update(void)
                 _startup_error_counts_set = true;
             }
         }
-
+        hal.console->printf("update 6\n");
         for (uint8_t i=0; i<INS_MAX_INSTANCES; i++) {
             if (_accel_error_count[i] < _accel_startup_error_count[i]) {
                 _accel_startup_error_count[i] = _accel_error_count[i];
@@ -1542,7 +1548,7 @@ void AP_InertialSensor::update(void)
                 _gyro_startup_error_count[i] = _gyro_error_count[i];
             }
         }
-
+        hal.console->printf("update 7\n");
         // adjust health status if a sensor has a non-zero error count
         // but another sensor doesn't.
         bool have_zero_accel_error_count = false;
@@ -1555,7 +1561,7 @@ void AP_InertialSensor::update(void)
                 have_zero_gyro_error_count = true;
             }
         }
-
+        hal.console->printf("update 8\n");
         for (uint8_t i=0; i<INS_MAX_INSTANCES; i++) {
             if (_gyro_healthy[i] && _gyro_error_count[i] > _gyro_startup_error_count[i] && have_zero_gyro_error_count) {
                 // we prefer not to use a gyro that has had errors
@@ -1566,7 +1572,7 @@ void AP_InertialSensor::update(void)
                 _accel_healthy[i] = false;
             }
         }
-
+        hal.console->printf("update 9\n");
         // set primary to first healthy accel and gyro
         for (uint8_t i=0; i<INS_MAX_INSTANCES; i++) {
             if (_gyro_healthy[i] && _use[i]) {
@@ -1574,6 +1580,7 @@ void AP_InertialSensor::update(void)
                 break;
             }
         }
+        hal.console->printf("update 10\n");
         for (uint8_t i=0; i<INS_MAX_INSTANCES; i++) {
             if (_accel_healthy[i] && _use[i]) {
                 _primary_accel = i;
@@ -1581,7 +1588,7 @@ void AP_InertialSensor::update(void)
             }
         }
     }
-
+    hal.console->printf("update 11\n");
     _last_update_usec = AP_HAL::micros();
     
     _have_sample = false;
@@ -1616,7 +1623,7 @@ void AP_InertialSensor::wait_for_sample(void)
         // consuming the sample with update()
         return;
     }
-
+    hal.console->printf("wait for sample 1\n");
     uint32_t now = AP_HAL::micros();
 
     if (_next_sample_usec == 0 && _delta_time <= 0) {
@@ -1625,7 +1632,7 @@ void AP_InertialSensor::wait_for_sample(void)
         _next_sample_usec = now + _sample_period_usec;
         goto check_sample;
     }
-
+    hal.console->printf("wait for sample 2\n");
     // see how long it is till the next sample is due
     if (_next_sample_usec - now <=_sample_period_usec) {
         // we're ahead on time, schedule next sample at expected period
@@ -1652,7 +1659,7 @@ void AP_InertialSensor::wait_for_sample(void)
         timing_printf("overshoot2 %u\n", (unsigned)(now-_next_sample_usec));
         _next_sample_usec = now + _sample_period_usec;
     }
-
+    hal.console->printf("wait for sample 3\n");
 check_sample:
     if (!_hil_mode) {
         // now we wait until we have the gyro and accel samples we need
@@ -1663,14 +1670,16 @@ check_sample:
         // IMUs to come in
         const uint8_t wait_per_loop = 100;
         const uint8_t wait_counter_limit = uint32_t(_loop_delta_t * 1.0e6) / (3*wait_per_loop);
+        hal.console->printf("wait for sample 4\n");
 
+        //GETS STUCK IN THIS LOOP
         while (true) {
             for (uint8_t i=0; i<_backend_count; i++) {
                 // this is normally a nop, but can be used by backends
                 // that don't accumulate samples on a timer
                 _backends[i]->accumulate();
             }
-
+            //hal.console->printf("wait for sample 5\n");
             for (uint8_t i=0; i<_gyro_count; i++) {
                 if (_new_gyro_data[i]) {
                     const uint8_t imask = (1U<<i);
@@ -1682,6 +1691,7 @@ check_sample:
                     }
                 }
             }
+            //hal.console->printf("wait for sample 6\n");
             for (uint8_t i=0; i<_accel_count; i++) {
                 if (_new_accel_data[i]) {
                     const uint8_t imask = (1U<<i);
@@ -1693,7 +1703,7 @@ check_sample:
                     }
                 }
             }
-
+            //hal.console->printf("wait for sample 7\n");
             // we wait for up to 1/3 of the loop time to get all of the required
             // accel and gyro samples. After that we accept at least
             // one of each
@@ -1714,12 +1724,13 @@ check_sample:
                     break;
                 }
             }
+            //hal.console->printf("wait for sample 8\n");
 
             hal.scheduler->delay_microseconds_boost(wait_per_loop);
             wait_counter++;
         }
     }
-
+    hal.console->printf("wait for sample 9\n");
     now = AP_HAL::micros();
     if (_hil_mode && _hil.delta_time > 0) {
         _delta_time = _hil.delta_time;
@@ -1746,7 +1757,7 @@ check_sample:
         }
     }
 #endif
-
+    hal.console->printf("wait for sample 10\n");
     _have_sample = true;
 }
 
