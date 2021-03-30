@@ -142,6 +142,13 @@ void AP_ExternalAHRS::init(void)
         //AP_HAL::panic("Failed to allocate ExternalAHRS");
     //}
 
+    uart = hal.serial(4);
+    if (uart == nullptr) {
+        AP_HAL::panic("Failed to connect to uart port.");
+        return;
+    }
+    uart->begin(115200);
+
     if (!hal.scheduler->thread_create(FUNCTOR_BIND_MEMBER(&AP_ExternalAHRS::update_thread, void), "AHRS", 2048, AP_HAL::Scheduler::PRIORITY_SPI, 0)) {
         AP_HAL::panic("Failed to start ExternalAHRS update thread");
     }
@@ -159,6 +166,8 @@ bool AP_ExternalAHRS::check_uart()
 
 void AP_ExternalAHRS::update_thread()
 {
+
+
     while(true) {
 
         //dummy data
