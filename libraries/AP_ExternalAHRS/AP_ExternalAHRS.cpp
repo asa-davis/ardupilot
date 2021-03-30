@@ -121,26 +121,26 @@ const AP_Param::GroupInfo AP_ExternalAHRS::var_info[] = {
 
 void AP_ExternalAHRS::init(void)
 {
-    if (devtype != DevType::VecNav) {
-        return;
-    }
-    auto &sm = AP::serialmanager();
+    //if (devtype != DevType::VecNav) {
+        //return;
+    //}
+    //auto &sm = AP::serialmanager();
     //uart = sm.find_serial(AP_SerialManager::SerialProtocol_AHRS, 0);
     //if (!uart) {
         //GCS_SEND_TEXT(MAV_SEVERITY_INFO, "ExternalAHRS no UART");
         //return;
     //}
-    baudrate = sm.find_baudrate(AP_SerialManager::SerialProtocol_AHRS, 0);
-    port_num = sm.find_portnum(AP_SerialManager::SerialProtocol_AHRS, 0);
+    //baudrate = sm.find_baudrate(AP_SerialManager::SerialProtocol_AHRS, 0);
+    //port_num = sm.find_portnum(AP_SerialManager::SerialProtocol_AHRS, 0);
 
-    bufsize = MAX(VN_PKT1_LENGTH, VN_PKT2_LENGTH);
-    pktbuf = new uint8_t[bufsize];
-    last_pkt1 = new VN_packet1;
-    last_pkt2 = new VN_packet2;
+    //bufsize = MAX(VN_PKT1_LENGTH, VN_PKT2_LENGTH);
+    //pktbuf = new uint8_t[bufsize];
+    //last_pkt1 = new VN_packet1;
+    //last_pkt2 = new VN_packet2;
 
-    if (!pktbuf || !last_pkt1 || !last_pkt2) {
-        AP_HAL::panic("Failed to allocate ExternalAHRS");
-    }
+    //if (!pktbuf || !last_pkt1 || !last_pkt2) {
+        //AP_HAL::panic("Failed to allocate ExternalAHRS");
+    //}
 
     if (!hal.scheduler->thread_create(FUNCTOR_BIND_MEMBER(&AP_ExternalAHRS::update_thread, void), "AHRS", 2048, AP_HAL::Scheduler::PRIORITY_SPI, 0)) {
         AP_HAL::panic("Failed to start ExternalAHRS update thread");
@@ -159,16 +159,19 @@ bool AP_ExternalAHRS::check_uart()
 
 void AP_ExternalAHRS::update_thread()
 {
-    hal.console -> printf("in external_ahrs update_thread()\n");
+    while(true) {
 
-    //dummy data
-    ins_data_message_t ins;
+        //dummy data
+        ins_data_message_t ins;
 
-    ins.accel = Vector3f{0, 0, 0};
-    ins.gyro = Vector3f{0, 0, 0};
-    ins.temperature = 42.0f;
+        ins.accel = Vector3f{0, 0, 0};
+        ins.gyro = Vector3f{0, 0, 0};
+        ins.temperature = 42.0f;
 
-    AP::ins().handle_external(ins);
+        AP::ins().handle_external(ins);
+        hal.scheduler->delay(10);
+    }
+
 }
 
 /*
