@@ -166,8 +166,6 @@ bool AP_ExternalAHRS::check_uart()
 
 void AP_ExternalAHRS::update_thread()
 {
-
-
     while(true) {
 
         //dummy data
@@ -175,7 +173,6 @@ void AP_ExternalAHRS::update_thread()
 
         ins.accel = Vector3f{0, 0, 0};
         ins.gyro = Vector3f{0, 0, 0};
-        ins.temperature = 42.0f;
 
         AP::ins().handle_external(ins);
         hal.scheduler->delay(10);
