@@ -11,10 +11,10 @@
 
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+*/
 /*
   suppport for serial connected AHRS systems
- */
+*/
 
 #define ALLOW_DOUBLE_MATH_FUNCTIONS
 
@@ -121,33 +121,14 @@ const AP_Param::GroupInfo AP_ExternalAHRS::var_info[] = {
 
 void AP_ExternalAHRS::init(void)
 {
-    //if (devtype != DevType::VecNav) {
-        //return;
-    //}
-    //auto &sm = AP::serialmanager();
-    //uart = sm.find_serial(AP_SerialManager::SerialProtocol_AHRS, 0);
-    //if (!uart) {
-        //GCS_SEND_TEXT(MAV_SEVERITY_INFO, "ExternalAHRS no UART");
-        //return;
-    //}
-    //baudrate = sm.find_baudrate(AP_SerialManager::SerialProtocol_AHRS, 0);
-    //port_num = sm.find_portnum(AP_SerialManager::SerialProtocol_AHRS, 0);
-
-    //bufsize = MAX(VN_PKT1_LENGTH, VN_PKT2_LENGTH);
-    //pktbuf = new uint8_t[bufsize];
-    //last_pkt1 = new VN_packet1;
-    //last_pkt2 = new VN_packet2;
-
-    //if (!pktbuf || !last_pkt1 || !last_pkt2) {
-        //AP_HAL::panic("Failed to allocate ExternalAHRS");
-    //}
-
-    uart = hal.serial(4);
-    if (uart == nullptr) {
+    auto &sm = AP::serialmanager();
+    baudrate = sm.find_baudrate(AP_SerialManager::SerialProtocol_AHRS, 0);
+    imu = hal.serial(4);
+    if (imu == nullptr) {
         AP_HAL::panic("Failed to connect to uart port.");
+        test = -3;
         return;
     }
-    uart->begin(115200);
 
     if (!hal.scheduler->thread_create(FUNCTOR_BIND_MEMBER(&AP_ExternalAHRS::update_thread, void), "AHRS", 2048, AP_HAL::Scheduler::PRIORITY_SPI, 0)) {
         AP_HAL::panic("Failed to start ExternalAHRS update thread");
@@ -166,18 +147,34 @@ bool AP_ExternalAHRS::check_uart()
 
 void AP_ExternalAHRS::update_thread()
 {
-    while(true) {
+    if(!portOpened) {
+        portOpened = true;
+        imu->begin(115200);
+        hal.scheduler->delay(1000);
 
-        //dummy data
-        ins_data_message_t ins;
+        //ins_data_message_t ins;
+        //ins.accel = Vector3f{6, 6, 6};
+        //ins.gyro = Vector3f{6, 6, 6};
 
-        ins.accel = Vector3f{0, 0, 0};
-        ins.gyro = Vector3f{0, 0, 0};
-
-        AP::ins().handle_external(ins);
-        hal.scheduler->delay(10);
+        //AP::ins().handle_external(ins);
+        //hal.scheduler->delay(1);
     }
 
+    while(true) {
+        if(packetReady) {
+            packetReady = false;
+            ins_data_message_t ins;
+
+            ins.accel = accelNew;
+            ins.gyro = gyroNew;
+
+            AP::ins().handle_external(ins);
+        }
+
+        readIMU();
+        buildPacket();
+        hal.scheduler->delay(1);
+    }
 }
 
 /*
@@ -404,8 +401,146 @@ void AP_ExternalAHRS::send_status_report(mavlink_channel_t chan) const
                                        mag_var, 0, 0);
 }
 
-namespace AP {
+//LORD METHODS
 
+
+//read all available bytes into ring buffer.
+void AP_ExternalAHRS::readIMU() {
+    uint32_t amountRead = imu -> read(tempData, bufferSize);
+    buffer.write(tempData, amountRead);
+}
+
+//use all available bytes to continue building packets where we left off last loop
+void AP_ExternalAHRS::buildPacket() {
+    while(buffer.available() >= searchBytes) {
+        switch (currPhase) {
+            case sync: {
+                bool good = buffer.read_byte(tempData);
+                if(!good) break;
+                if (tempData[0] == nextSyncByte) {
+                    if (nextSyncByte == syncByte2) {
+                        nextSyncByte = syncByte1;
+                        currPacket.header[0] = 0x75;
+                        currPacket.header[1] = 0x65;
+                        currPhase = payloadSize;
+                        searchBytes = 2;
+                    } else {
+                        nextSyncByte = syncByte2;
+                    }
+                } else {
+                    nextSyncByte = syncByte1;
+                }
+            }
+                break;
+            case payloadSize: {
+                buffer.peekbytes(tempData, searchBytes);
+                currPacket.header[2] = tempData[0];
+                currPacket.header[3] = tempData[1];
+                searchBytes = tempData[1] + 4; //next time we need to peek the second half of the header (which we already peeked) + payload + checksum
+                currPhase = payloadAndChecksum;
+            }
+                break;
+            case payloadAndChecksum: {
+                buffer.peekbytes(tempData, searchBytes);
+                //copy in the payload and checksum, skip second half of header
+                for (int i = 2; i < searchBytes - 2; i++) {
+                    currPacket.payload[i - 2] = tempData[i];
+                }
+                currPacket.checksum[0] = tempData[searchBytes - 2];
+                currPacket.checksum[1] = tempData[searchBytes - 1];
+                //if checksum is good we can move read pointer, otherwise we leave all those bytes and start after the last sync bytes
+                if (validPacket()) {
+                    getCurrPacket();
+                    buffer.read(tempData, searchBytes);
+                }
+                currPhase = sync;
+                searchBytes = 1;
+            }
+                break;
+        }
+    }
+}
+
+//gets checksum and compares it to curr packet
+bool AP_ExternalAHRS::validPacket() {
+    uint8_t checksumByte1 = 0;
+    uint8_t checksumByte2 = 0;
+
+    for (int i = 0; i < 4; i++) {
+        checksumByte1 += currPacket.header[i];
+        checksumByte2 += checksumByte1;
+    }
+
+    for (int i = 0; i < currPacket.header[3]; i++) {
+        checksumByte1 += currPacket.payload[i];
+        checksumByte2 += checksumByte1;
+    }
+
+    return (currPacket.checksum[0] == checksumByte1 && currPacket.checksum[1] == checksumByte2);
+}
+
+
+void AP_ExternalAHRS::accelGyroData(uint8_t * fieldData, float arr[]) {
+    //vector<float> xyzData;
+    uint32_t midx = 0;
+    for (uint8_t i = 0; i < 4; i++ ) {
+        midx = (midx << 8) + static_cast<uint32_t>(fieldData[i]);
+    }
+    uint32_t midy = 0;
+    for (uint8_t i = 4; i < 8; i++ ) {
+        midy = (midy << 8) + static_cast<uint32_t>(fieldData[i]);
+    }
+    uint32_t midz = 0;
+    for (uint8_t i = 8; i < 12; i++ ) {
+        midz = (midz << 8) + static_cast<uint32_t>(fieldData[i]);
+    }
+    arr[0] = ( (* (float *) &midx) ); // Reinterpret_cast does not work for this so
+    arr[1] = ( (* (float *) &midy) );
+    arr[2] = ( (* (float *) &midz) );
+    //xyzData.push_back(* reinterpret_cast<float*>(&midx)); // Works, but its doing the same thing as above, if you do it without address' it doesn't work
+    //return xyzData;
+}
+
+void AP_ExternalAHRS::getCurrPacket() {
+    /*for(int i = 0; i < 4; i++) {
+        console->printf("0x%x ", currPacket.header[i]);
+    }
+    for(int i = 0; i < currPacket.header[3]; i++) {
+        console->printf("0x%x ", currPacket.payload[i]);
+    }
+    for(int i = 0; i < 2; i++) {
+        console->printf("0x%x ", currPacket.checksum[i]); 75 65 80 A3
+    }
+    console -> printf("\n");*/
+    uint8_t payloadLength = currPacket.header[3];
+// length descriptor, 12bit payload
+    for (uint8_t i = 0; i < payloadLength; i += currPacket.payload[i]) {
+        //uint8_t fieldLength = currPacket.payload[i]; //Each field in the payload has its own length property as the first byte of the field
+        uint8_t fieldDescriptor = currPacket.payload[i+1]; // Second byte is the field descriptor. Whether it is accel or gyro, etc.
+        //ctor<float> xyz; // Maybe call accelGyroData() here instead to reduce reuse of code but could be a waste if we include other data in the field like GPS data
+        float retarr[3];
+        accelGyroData(currPacket.payload + (i+2),retarr); // This will probably break if the packet is wrong
+        switch (fieldDescriptor) {  // Switch to relevant course for accel or gyro or etc. data
+            case 4:
+                accelNew = Vector3f{retarr[0], retarr[1], retarr[2]};
+                //console->printf("Accel - X: %f,\tY: %f,\tZ: %f\n",retarr[0], retarr[1], retarr[2]);
+                break;
+            case 5:
+                gyroNew = Vector3f{retarr[0], retarr[1], retarr[2]};
+                //console->printf("Gyro  - X: %f,\tY: %f,\tZ: %f\n",retarr[0], retarr[1], retarr[2]);
+                // cout << "Gyro:\nX: " << xyz[0] << "\nY: " << xyz[1] << "\nZ: " << xyz[2] << '\n';
+                // firstg = (firstg + 1) % BUFFSIZE; // Before we push on data increment the index so that firstg will equal the most recent data
+                // gyroBuffer[firstg] = xyz; // Push vector with gyro xyz onto the buffer
+                break;
+            default:
+                //cout << "Don't want anything but Gyro and Accel\n";
+                break;
+        }
+    }
+    packetReady = true;
+}
+
+namespace AP {
 AP_ExternalAHRS &externalAHRS()
 {
     return *AP_ExternalAHRS::get_singleton();

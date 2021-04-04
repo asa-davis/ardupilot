@@ -17,7 +17,7 @@
  */
 
 #pragma once
-
+#include <AP_HAL/utility/RingBuffer.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Common/Location.h>
@@ -116,7 +116,7 @@ private:
     AP_HAL::UARTDriver *uart;
     int8_t port_num;
     bool port_opened;
-    uint32_t baudrate;
+    float baudrate;
 
     void update_thread();
     bool check_uart();
@@ -142,6 +142,42 @@ private:
     Location origin;
 
     static HAL_Semaphore sem;
+
+    struct LORD_Packet {
+        uint8_t header[4];
+        uint8_t* payload;
+        uint8_t checksum[2];
+    };
+
+    //LORD VARIABLES
+    AP_HAL::UARTDriver *imu;
+    //shared ring buffer
+    static const uint32_t bufferSize = 1024;
+    ByteBuffer buffer{bufferSize};
+    uint8_t tempData[bufferSize];
+    //packet parsing state variables
+    struct LORD_Packet currPacket;
+    enum SearchPhase { sync, payloadSize, payloadAndChecksum };
+    SearchPhase currPhase = sync;
+    int searchBytes = 1;
+    //sync bytes phase
+    const uint8_t syncByte1 = 0x75;
+    const uint8_t syncByte2 = 0x65;
+    uint8_t nextSyncByte = syncByte1;
+
+    //new
+    bool portOpened = false;
+    bool packetReady = false;
+    Vector3f accelNew;
+    Vector3f gyroNew;
+    float test = -2;
+
+    //LORD METHODS
+    void readIMU();
+    void buildPacket();
+    bool validPacket();
+    void getCurrPacket();
+    void accelGyroData(uint8_t * fieldData, float arr[]);
 };
 
 namespace AP {

@@ -2373,6 +2373,7 @@ void AP_InertialSensor::kill_imu(uint8_t imu_idx, bool kill_it)
 #if HAL_EXTERNAL_AHRS_ENABLED
 void AP_InertialSensor::handle_external(const AP_ExternalAHRS::ins_data_message_t &pkt)
 {
+    //hal.console->printf("accel: %f %f %f\n", pkt.accel[0], pkt.accel[1], pkt.accel[2]);
     for (uint8_t i = 0; i < _backend_count; i++) {
         _backends[i]->handle_external(pkt);
     }
